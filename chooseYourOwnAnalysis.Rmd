@@ -1,0 +1,235 @@
+---
+title: "Choose Your Own Analysis"
+author: "Craig 'Doc' Savage"
+date: "11 November 2018"
+runtime: shiny
+output: 
+  html_notebook: 
+    fig_height: 5
+    number_sections: yes
+    toc: yes
+---
+
+# Executive Summary
+
+Kaggle (www.kaggle.com), a renowned host and sponsor of data analysis competitions, has sponsored their own competition. Their survey attracted 23,859 responses to the 50 question survey. Their challenge, released to the Kaggle community with the incentive of cash rewards, asked analysts to examine the data set and provide insights on (intentionally ill-defined) segments: 
+
+>The challenge objective: tell a data story about a subset of the data science community represented in this survey, through a combination of both narrative text and data exploration. A "story" could be defined any number of ways, and that's deliberate. The challenge is to deeply explore (through data) the impact, priorities, or concerns of a specific group of data science and machine learning practitioners. That group can be defined in the macro (for example: anyone who does most of their coding in Python) or the micro (for example: female data science students studying machine learning in masters programs). This is an opportunity to be creative and tell the story of a community you identify with or are passionate about!
+
+(Source: https://www.kaggle.com/kaggle/kaggle-survey-2018/home)
+
+Note that this is unlike most Kaggle competitions: there is no single metric to determine a ranking of competition submissions. 
+
+There are three main goals of this document[^1]:
+
+1. Demonstrate an *interactive approach* for ill-defined analytics.
+
+2. Demonstrate *adaptive documentation* for usage in conjunction with an *interactive approach*.
+
+3. Argue for a *global view* of analytics and data science.
+
+[^1]: Note that "win" is not a goal of this document. Please feel free to fork/copy/mimic/etc this document.
+
+This is an example of an *interactive approach*, utilising the `R` package, `shiny`, integrated with `rmarkdown`. 
+
+Future versions will include the *adaptive documentation* bit.
+
+I'll begin to make the arguments for the *global view*, but more on that will follow!
+
+# Programming Preliminaries {.tabset .tabset-fade .tabset-pills}
+
+Before beginning the interactive analysis, a number of preliminary bits of code are required.
+
+## Library Load
+
+Libraries are loaded for convenience. These include:
+1. `rmarkdown`: Obviously required for an `rmarkdown` document!
+2. `tidyverse`: Rather than load each component individually, it's easier for me to load the package of packages.
+3. `shiny`: Obviously required for `shiny` interactions!
+4. `shinyBS`: Bootstrap utilities for `shiny`. This includes tooltips and modals, which will be used later.
+5. `DT`: Use of `datatables.js` in `R`. Not to be confused with `data.table`! 
+
+
+```{r libLoad, include=TRUE, echo=TRUE, message=FALSE, warning=FALSE}
+# Load libraries
+# rmarkdown to be sure everything herein will work :)
+library( rmarkdown )
+# tidyverse for most of the analysis
+library( tidyverse )
+# shiny for interactive bits
+library( shiny )
+# shinyBS for BootStrap tooltips & modals
+# Yes, BS stands for BootStrap - what else would it stand for?
+library( shinyBS )
+# DT for better table displays
+library( DT )
+
+```
+
+
+## Data Load
+
+Only a subset of the data will be used here. These are:
+* Data from the *multiple choice* section. The free-answer responses are not considered.
+* Questions that have a *single option*, rather than the "List all..." variety. This is to simplify the analysis, and make the general coding much easier.
+* Data are augmented by a user-defined *topic*, to simplify the questions down to a shorter name.
+
+```{r dataLoad, include=TRUE, echo=TRUE, message=FALSE, warning=FALSE}
+## Check multipleChoiceResponses
+if( file.exists( 'multipleChoiceResponses.csv' ) ){
+  ## Loading the data is a bit of an adventure in itself....
+  baseLoad <- readr::read_csv( 'multipleChoiceResponses.csv', skip=1 ) %>%
+              mutate( rowID=row_number() ) 
+  names( baseLoad )[1] <- 'Time'
+
+  # Get all the categorical data together
+  catData <- baseLoad %>%
+    mutate( rowID=row_number() ) %>%
+    gather( -rowID, key=Question, value=Answer ) 
+  # Get the question IDs and question text for merging
+  titleLoad <- readr::read_csv( 'multipleChoiceResponses.csv', n_max=1 ) %>%
+    gather( key=questionID, value=Question ) %>%
+    separate( questionID, into=c('QID', 'Qualifier'), extra='merge', fill='right' ) %>%
+    # Remove free-text fields
+    filter( !grepl( x=Qualifier, pattern='Text', ignore.case=TRUE )
+            , !grepl( x=Qualifier, pattern='Part', ignore.case=TRUE)
+            , !grepl( x=Qualifier, pattern='OTHER', ignore.case=TRUE ) )
+
+  cleanData <- catData %>%
+    inner_join( titleLoad, by='Question' ) %>%
+    select( rowID, QID, Answer ) %>%
+    filter( !is.na( Answer ), Answer != '-1' )
+
+  topicData <- tibble( QID=paste0( 'Q', c(1:10, 12, 17, 18, 20, 22:26, 32, 37, 40, 43, 46, 48) )
+                       , Topic=c(
+                         'Gender' #Q1
+                         , 'Age' #Q2
+                         , 'Country' #Q3
+                         , 'Education' #Q4
+                         , 'Major' #Q5
+                         , 'Title' #Q6
+                         , 'Industry' #Q7
+                         , 'Experience' #Q8
+                         , 'Salary' #Q9
+                         , 'EmployerML' #Q10
+                         , 'PrimaryTool' #Q12
+                         , 'PrimaryProgramming' #Q17
+                         , 'RecommendProgramming' #Q18
+                         , 'PrimaryML' #Q20
+                         , 'PrimaryDV' #Q22
+                         , 'ActiveCodePc' #Q23
+                         , 'ExperienceCoding' #Q24
+                         , 'ExperienceML' #Q25
+                         , 'RUDS' #Q26
+                         , 'PrimaryDataType' #Q32
+                         , 'PrimaryOnlinePlatform' #Q37
+                         , 'AcadOrIndep' #Q40
+                         , 'BiasPercent' #Q43
+                         , 'InsightsPercent' #Q46
+                         , 'IsMLBlackBox' #Q48 
+                       ) )
+  
+  finalData <- cleanData %>% 
+    left_join( topicData, by='QID' ) %>%
+    select( rowID, Topic, Answer ) %>%
+    spread( key=Topic, value=Answer ) %>%
+    mutate( Country=case_when(
+      grepl( x=Country, pattern='United States' ) ~ 'USA'
+      , grepl( x=Country, pattern='United Kingdom' ) ~ 'UK'
+      , grepl( x=Country, pattern='Iran' ) ~ 'Iran'
+      , grepl( x=Country, pattern='Hong Kong') ~ 'Hong Kong'
+      , grepl( x=Country, pattern='I do not' ) ~ 'Other'
+      , TRUE ~ Country
+    )
+    ) %>%
+    mutate_if( is_character, as_factor )
+} else {
+  stop('Cannot find survey response file!' )
+}
+```
+
+## Function Definition
+
+To facilitate analysis, some functions are defined. 
+
+```{r functionDef, include=TRUE}
+getNumberPercentage <- function( fullData, groupVar ){
+  summaryData <- fullData %>%
+    group_by_( groupVar, add=TRUE ) %>%
+    summarise( N=n() ) %>%
+    mutate( Percentage=N/sum( N ) ) 
+  
+  return( summaryData )
+}
+```
+
+# Interactive Analysis
+
+The primary purpose of this document is to demonstrate and encourage *interactive analysis and documentation*. This is accomplished in `rmarkdown` with the runtime option of `shiny`, allowing interactive displays from within the document itself.
+
+(Future versions will include building the document from within the document itself!)
+
+The interactive documentation is to be considered because:
+* The problem statement is *ill-defined*. From the description:
+> That group can be defined in the macro (for example: anyone who does most of their coding in Python) or the micro (for example: female data science students studying machine learning in masters programs). This is an opportunity to be creative and tell the story of a community you identify with or are passionate about!
+
+Of course, my passion may not align with yours; I'm passionate about a *country-level* exploration of the data, but you might prefer gender, age, experience with machine learning methods, or anything else. Rather than trying to find a "best" interpretation of the data, I'm aiming to create a *process* of interpreting the data, so that discussions can help build the documentation in a collaborative manner. 
+
+I've begun my analysis by considering the split of gender by country, where there are some results that you might find surprising! Of course, you may prefer something else. Here, combinatorics are not our friend - even after dropping half of the questions, there are ${25 \choose 2}=300$ different pairs of variables to consider! Rather than picking one (or even a few), or overwhelming the reader with all possible options, here the *process* of selecting the important variables is left to the user, and should be a good start to finding initial insights.
+
+```{r simplePlotMaker, echo=TRUE}
+inputPanel( selectInput( inputId='firstVar', label='Primary Variable', choice=unique( topicData$Topic ), selected='Country', multiple=FALSE)
+            , selectInput( inputId ='secondVar', label='Secondary Variable', choice=unique( topicData$Topic ), selected='Gender', multiple=FALSE )
+            , bsTooltip( id='firstVar', title='This will be the ID for each bar', placement='top' ) 
+            , bsTooltip( id='secondVar', title='This will give the colour cuts for each bar', placement='top' ) 
+)
+
+renderPlot({
+ simpleSegmentPlot <- ggplot( data=finalData, aes_string( x=input$firstVar, fill=input$secondVar ) ) + 
+   geom_bar() +
+   coord_flip() +
+   theme( legend.position='bottom' ) +
+   ggtitle( paste( 'Segmentation, considering', input$firstVar, 'cut by', input$secondVar ), subtitle='By absolute numbers.' )
+ simpleSegmentPlot
+})
+renderPlot({
+ simplePercentagePlot <- ggplot( data=finalData, aes_string( x=input$firstVar, fill=input$secondVar ) ) + 
+   geom_bar(position='fill') +
+   coord_flip() + 
+   theme( legend.position='bottom' ) +
+   ggtitle( paste( 'Segmentation, considering', input$firstVar, 'cut by', input$secondVar ), subtitle='By fraction of responses, rather than absolute numbers.' )
+ simplePercentagePlot
+})
+renderDataTable({
+  summaryData <- getNumberPercentage( finalData %>% group_by_( input$firstVar ), input$secondVar )
+  myDataTable <- datatable( summaryData ) %>%
+    formatPercentage( 'Percentage', digits=2 )
+})
+```
+
+# Initial Findings
+
+As stated above, I'm interested in the global nature of data scientists. By looking at the global split of survey respondants by gender, I've found:
+
+```{r globalGender, eval=TRUE, results='hold'}
+mySummary <- getNumberPercentage( finalData %>% group_by( Country ), 'Gender' )
+myAugData <- finalData %>% inner_join( mySummary %>% filter( Gender == 'Female' ) %>% select( -Gender ), by='Country' ) %>%
+  mutate( Country=reorder( Country, Percentage, FUN=max ) )
+myPlot <- ggplot( myAugData, aes( x=Country, fill=Gender ) ) + 
+  geom_bar(position='fill') +
+  coord_flip() +
+  theme( legend.position='bottom' ) +
+  labs( x='Country', y='Fraction', caption='Note the top four countries for female-represenation are muslim-majority.', title='Segmentation of Gender, by Country', subtitle='By fraction, not absolute numbers' )
+
+renderPlot( myPlot )
+```
+
+As I've stated in the caption, the countries with the highest representation of female respondants are all muslim-majority nations. Also, they're all relatively small numbers:
+
+```{r globalBreakdown}
+mySummaryData <- getNumberPercentage( finalData %>% group_by( Country ), 'Gender' )
+myDT <- datatable( mySummaryData %>% arrange( Gender, desc( Percentage ) ) ) %>%
+  formatPercentage( 'Percentage', digits=2 )
+myDT
+```
+
