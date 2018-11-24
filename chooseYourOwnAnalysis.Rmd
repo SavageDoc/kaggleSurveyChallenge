@@ -8,6 +8,8 @@ output:
     fig_height: 5
     number_sections: yes
     toc: yes
+params:
+  maxGraphs: 10
 ---
 
 # Executive Summary
@@ -16,7 +18,7 @@ Kaggle (www.kaggle.com), a renowned host and sponsor of data analysis competitio
 
 >The challenge objective: tell a data story about a subset of the data science community represented in this survey, through a combination of both narrative text and data exploration. A "story" could be defined any number of ways, and that's deliberate. The challenge is to deeply explore (through data) the impact, priorities, or concerns of a specific group of data science and machine learning practitioners. That group can be defined in the macro (for example: anyone who does most of their coding in Python) or the micro (for example: female data science students studying machine learning in masters programs). This is an opportunity to be creative and tell the story of a community you identify with or are passionate about!
 
-(Source: https://www.kaggle.com/kaggle/kaggle-survey-2018/home)
+[Source](https://www.kaggle.com/kaggle/kaggle-survey-2018/home)
 
 Note that this is unlike most Kaggle competitions: there is no single metric to determine a ranking of competition submissions. 
 
@@ -43,12 +45,12 @@ Before beginning the interactive analysis, a number of preliminary bits of code 
 ## Library Load
 
 Libraries are loaded for convenience. These include:
-1. `rmarkdown`: Obviously required for an `rmarkdown` document!
-2. `tidyverse`: Rather than load each component individually, it's easier for me to load the package of packages.
-3. `shiny`: Obviously required for `shiny` interactions!
-4. `shinyBS`: Bootstrap utilities for `shiny`. This includes tooltips and modals, which will be used later.
-5. `DT`: Use of `datatables.js` in `R`. Not to be confused with `data.table`! 
 
+1. `rmarkdown`: Obviously required for an `rmarkdown` document!  
+2. `tidyverse`: Rather than load each component individually, it's easier for me to load the package of packages.  
+3. `shiny`: Obviously required for `shiny` interactions!  
+4. `shinyBS`: Bootstrap utilities for `shiny`. This includes tooltips and modals, which will be used later.  
+5. `DT`: Use of `datatables.js` in `R`. Not to be confused with `data.table`!   
 
 ```{r libLoad, include=TRUE, echo=TRUE, message=FALSE, warning=FALSE}
 # Load libraries
@@ -63,20 +65,23 @@ library( shiny )
 library( shinyBS )
 # DT for better table displays
 library( DT )
-
 ```
 
 
 ## Data Load
 
-Only a subset of the data will be used here. These are:
+Only a subset of the data will be used here. These are:  
+
 * Data from the *multiple choice* section. The free-answer responses are not considered.
+
 * Questions that have a *single option*, rather than the "List all..." variety. This is to simplify the analysis, and make the general coding much easier.
+
 * Data are augmented by a user-defined *topic*, to simplify the questions down to a shorter name.
 
 ```{r dataLoad, include=TRUE, echo=TRUE, message=FALSE, warning=FALSE}
 ## Check multipleChoiceResponses
-if( file.exists( 'multipleChoiceResponses.csv' ) ){
+if( file.exists( 'multipleChoiceResponses.csv' ) & 
+    !exists( 'adaptiveRV', inherits=TRUE ) ){
   ## Loading the data is a bit of an adventure in itself....
   baseLoad <- readr::read_csv( 'multipleChoiceResponses.csv', skip=1 ) %>%
               mutate( rowID=row_number() ) 
@@ -100,7 +105,7 @@ if( file.exists( 'multipleChoiceResponses.csv' ) ){
     select( rowID, QID, Answer ) %>%
     filter( !is.na( Answer ), Answer != '-1' )
 
-  topicData <- tibble( QID=paste0( 'Q', c(1:10, 12, 17, 18, 20, 22:26, 32, 37, 40, 43, 46, 48) )
+  topicData <- dplyr::tibble( QID=paste0( 'Q', c(1:10, 12, 17, 18, 20, 22:26, 32, 37, 40, 43, 46, 48) )
                        , Topic=c(
                          'Gender' #Q1
                          , 'Age' #Q2
@@ -142,10 +147,12 @@ if( file.exists( 'multipleChoiceResponses.csv' ) ){
       , TRUE ~ Country
     )
     ) %>%
-    mutate_if( is_character, as_factor )
-} else {
+    mutate_if( is.character, as.factor )
+  } else if( !exists( 'adaptiveRV', inherits=TRUE ) ){
   stop('Cannot find survey response file!' )
 }
+
+renderTable( head( finalData ) )
 ```
 
 ## Function Definition
@@ -163,6 +170,33 @@ getNumberPercentage <- function( fullData, groupVar ){
 }
 ```
 
+## Reactive Value
+
+To support the *adaptive documentation*, user-selected variables are included in a `reactiveValue`. Effectively, they dynamically store information for later retrieval, based upon the *interactive analysis* performed by the reader. 
+
+```{r rvDef}
+# Track four pieces of information:
+# 1. The number of user-selected graphs
+# 2. Free text describing said graph
+# 3. A caption for the graph
+# 4. The graph itself
+# Note the variable is stored in the parent environment, and there's first a 
+# check to see if it exists.
+if( !exists( 'adaptiveRV', inherits = TRUE ) ){
+  adaptiveRV <<- reactiveValues( finalData=finalData # Store the data here
+                                 , topicData=topicData
+                                 , n=0 # Number of saved plots
+                                 , freeText=NULL
+                                 , captionText=NULL
+                                 , userPlots=NULL
+                                 , currentNumberPlot=NULL
+                                 , currentPercentagePlot=NULL
+                                 , thisPlot=NULL )
+  userPlots <<- vector( 'list', params$maxGraphs )
+}
+# Otherwise, there's likely to be something in there - don't overwrite it!
+```
+
 # Interactive Analysis
 
 The primary purpose of this document is to demonstrate and encourage *interactive analysis and documentation*. This is accomplished in `rmarkdown` with the runtime option of `shiny`, allowing interactive displays from within the document itself.
@@ -177,59 +211,159 @@ Of course, my passion may not align with yours; I'm passionate about a *country-
 
 I've begun my analysis by considering the split of gender by country, where there are some results that you might find surprising! Of course, you may prefer something else. Here, combinatorics are not our friend - even after dropping half of the questions, there are ${25 \choose 2}=300$ different pairs of variables to consider! Rather than picking one (or even a few), or overwhelming the reader with all possible options, here the *process* of selecting the important variables is left to the user, and should be a good start to finding initial insights.
 
-```{r simplePlotMaker, echo=TRUE}
-inputPanel( selectInput( inputId='firstVar', label='Primary Variable', choice=unique( topicData$Topic ), selected='Country', multiple=FALSE)
-            , selectInput( inputId ='secondVar', label='Secondary Variable', choice=unique( topicData$Topic ), selected='Gender', multiple=FALSE )
-            , bsTooltip( id='firstVar', title='This will be the ID for each bar', placement='top' ) 
-            , bsTooltip( id='secondVar', title='This will give the colour cuts for each bar', placement='top' ) 
-)
+```{r simplePlotMaker, echo=TRUE, warning=TRUE, message=TRUE}
+docUI <- fluidPage(
+  sidebarLayout(
+    sidebarPanel( 
+      selectInput( inputId='firstVar'
+                   , label='Primary Variable'
+                   , choice=unique( isolate( adaptiveRV$topicData$Topic ) )
+                   , selected='Country', multiple=FALSE)
+      , selectInput( inputId ='secondVar'
+                     , label='Secondary Variable'
+                     , choice=unique( isolate( adaptiveRV$topicData$Topic ) )
+                     , selected='Gender'
+                     , multiple=FALSE )
+      , actionButton( inputId='adaptDocument', label='Document!' )
+      , bsTooltip( id='firstVar'
+                   , title='This will be the ID for each bar'
+                   , placement='top' ) 
+      , bsTooltip( id='secondVar'
+                   , title='This will give the colour cuts for each bar'
+                   , placement='top' ) 
+      , bsModal( id='docInput'
+                 , title='Add to your document'
+                 , trigger='adaptDocument'
+                 , textInput( inputId ='addText'
+                              , label='Write something about your plot:'
+                              , placeholder = 'Free text here' ) 
+                 , plotOutput( 'addPlot' ) 
+                 , textInput( inputId='addCaption'
+                              , label='Add a caption to your plot' 
+                              , placeholder='Caption text' ) 
+                 , actionButton(inputId = 'docCommit', label = 'Document!' )
+      )
+    ) # End sidebarPanel
+    , mainPanel( tabsetPanel( id='viewPlot'
+      , tabPanel( 'Number', value='Number'
+                  , plotOutput( 'numberPlot' )
+                  , dataTableOutput( 'selectData' ) )
+      , tabPanel( 'Percentage', value='Percentage'
+                  , plotOutput( 'percentagePlot' )
+                  , dataTableOutput( 'selectData1' ) )
+    ) # End tabsetPanel
+    ) # End mainPanel
+  ) # End sidebarLayout
+) # End fluidPage
+docServer <- function( input, output, session ){
+  output$numberPlot <- renderPlot({
+    simpleSegmentPlot <- ggplot( data=adaptiveRV$finalData
+                                 , aes_string( x=input$firstVar, fill=input$secondVar ) ) +
+      geom_bar() +
+      coord_flip() +
+      theme( legend.position='bottom' ) +
+      ggtitle( paste( 'Segmentation, considering'
+                      , input$firstVar
+                      , 'cut by'
+                      , input$secondVar )
+               , subtitle='By absolute numbers.' )
+    adaptiveRV$currentNumberPlot <- simpleSegmentPlot
+    simpleSegmentPlot
+  })
+  
+  output$percentagePlot <- renderPlot({
+    simplePercentagePlot <- ggplot( data=adaptiveRV$finalData
+                                    , aes_string( x=input$firstVar
+                                                  , fill=input$secondVar ) ) + 
+      geom_bar(position='fill') +
+      coord_flip() + 
+      theme( legend.position='bottom' ) +
+      ggtitle( paste( 'Segmentation, considering', input$firstVar, 'cut by', input$secondVar ), subtitle='By fraction of responses, rather than absolute numbers.' )
+    adaptiveRV$currentPercentagePlot <- simplePercentagePlot
+    simplePercentagePlot
+    })
+  
+  output$selectData <- renderDataTable({
+    summaryData <- getNumberPercentage( adaptiveRV$finalData %>% 
+                                          group_by_( input$firstVar )
+                                        , input$secondVar )
+    adaptiveRV$tableData <- summaryData
+    myDataTable <- datatable( summaryData ) %>%
+      formatPercentage( 'Percentage', digits=2 )
+    myDataTable
+  })
+  output$selectData1 <- renderDataTable({
+    summaryData <- getNumberPercentage( adaptiveRV$finalData %>%
+                                          group_by_( input$firstVar )
+                                        , input$secondVar )
+    adaptiveRV$tableData <- summaryData
+    myDataTable <- datatable( summaryData ) %>%
+      formatPercentage( 'Percentage', digits=2 )
+    myDataTable
+  })
+  output$addPlot <- renderPlot({
+    # Check which plot the user is viewing
+    if( input$viewPlot == 'Number' ){
+      thisPlot <- adaptiveRV$currentNumberPlot
+    } else {
+      thisPlot <- adaptiveRV$currentPercentagePlot
+    }
+    adaptiveRV$thisPlot <- thisPlot
+    thisPlot
+  })
+  
+  observeEvent( input$docCommit,{
+    adaptiveRV$n <- adaptiveRV$n+1
+    n <- adaptiveRV$n
+    adaptiveRV$freeText <- input$addText
+    adaptiveRV$captionText <- input$addCaption
+    adaptiveRV$userPlots <- adaptiveRV$thisPlot
+    userPlots <<- adaptiveRV$thisPlot
+    adaptiveRV$userData <- adaptiveRV$tableData
+    
+    toggleModal( session, modalId = 'docInput')
+  })
+}
 
-renderPlot({
- simpleSegmentPlot <- ggplot( data=finalData, aes_string( x=input$firstVar, fill=input$secondVar ) ) + 
-   geom_bar() +
-   coord_flip() +
-   theme( legend.position='bottom' ) +
-   ggtitle( paste( 'Segmentation, considering', input$firstVar, 'cut by', input$secondVar ), subtitle='By absolute numbers.' )
- simpleSegmentPlot
-})
-renderPlot({
- simplePercentagePlot <- ggplot( data=finalData, aes_string( x=input$firstVar, fill=input$secondVar ) ) + 
-   geom_bar(position='fill') +
-   coord_flip() + 
-   theme( legend.position='bottom' ) +
-   ggtitle( paste( 'Segmentation, considering', input$firstVar, 'cut by', input$secondVar ), subtitle='By fraction of responses, rather than absolute numbers.' )
- simplePercentagePlot
-})
-renderDataTable({
-  summaryData <- getNumberPercentage( finalData %>% group_by_( input$firstVar ), input$secondVar )
-  myDataTable <- datatable( summaryData ) %>%
-    formatPercentage( 'Percentage', digits=2 )
-})
+# Run the shinyApp from within the document
+shinyApp( ui=docUI, server=docServer )
 ```
 
 # Initial Findings
 
 As stated above, I'm interested in the global nature of data scientists. By looking at the global split of survey respondants by gender, I've found:
 
-```{r globalGender, eval=TRUE, results='hold'}
-mySummary <- getNumberPercentage( finalData %>% group_by( Country ), 'Gender' )
-myAugData <- finalData %>% inner_join( mySummary %>% filter( Gender == 'Female' ) %>% select( -Gender ), by='Country' ) %>%
+```{r globalGender, eval=TRUE, results='asis'}
+mySummary <- getNumberPercentage( isolate( adaptiveRV$finalData ) %>% group_by( Country ), 'Gender' )
+myAugData <- isolate( adaptiveRV$finalData ) %>% inner_join( mySummary %>% filter( Gender == 'Female' ) %>% select( -Gender ), by='Country' ) %>%
   mutate( Country=reorder( Country, Percentage, FUN=max ) )
 myPlot <- ggplot( myAugData, aes( x=Country, fill=Gender ) ) + 
   geom_bar(position='fill') +
   coord_flip() +
   theme( legend.position='bottom' ) +
   labs( x='Country', y='Fraction', caption='Note the top four countries for female-represenation are muslim-majority.', title='Segmentation of Gender, by Country', subtitle='By fraction, not absolute numbers' )
-
 renderPlot( myPlot )
 ```
 
 As I've stated in the caption, the countries with the highest representation of female respondants are all muslim-majority nations. Also, they're all relatively small numbers:
 
 ```{r globalBreakdown}
-mySummaryData <- getNumberPercentage( finalData %>% group_by( Country ), 'Gender' )
+mySummaryData <- getNumberPercentage( isolate( adaptiveRV$finalData ) %>% group_by( Country ), 'Gender' )
 myDT <- datatable( mySummaryData %>% arrange( Gender, desc( Percentage ) ) ) %>%
   formatPercentage( 'Percentage', digits=2 )
 myDT
 ```
 
+# Custom findings
+
+Of course, for an *adaptive documentation* demonstration, we include pieces of analysis that the user(s) have found. 
+
+```{r adaptiveDoc, comment=NA, eval=TRUE, echo=TRUE, results='asis', cache.lazy=TRUE}
+if( isolate( adaptiveRV$n ) == 0 ){
+  print( "No additional documentation has been created yet. Go to the user-reactive part of the code (the different plots by colour), find one you like, and hit the 'Document' button.")
+} else {
+  print( noquote( isolate( adaptiveRV$freeText[[1]] ) ), quote=FALSE )
+  
+  renderPlot( userPlots[[1]] + labs( caption=isolate( adaptiveRV$captionText ) ) )
+}
+```
