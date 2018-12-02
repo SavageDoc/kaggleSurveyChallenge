@@ -1,0 +1,469 @@
+---
+title: "Choose Your Own Analysis"
+author: "Craig 'Doc' Savage"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    highlight: espresso
+    number_sections: yes
+    toc: yes
+  html_notebook: 
+    fig_height: 5
+    number_sections: yes
+    toc: yes
+---
+
+```{r initSettings, include=TRUE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set( fig.align='center', message=FALSE, warning=FALSE, error=FALSE )
+```
+
+# Executive Summary
+
+# Document Overview
+
+The remainder of the document is organised as follows:
+
+
+# Introduction
+
+Kaggle (www.kaggle.com), a renowned host and sponsor of data analysis competitions, has sponsored their own competition. Their survey attracted 23,859 responses to the 50 question survey. Their challenge, released to the Kaggle community with the incentive of cash rewards, asked analysts to examine the data set and provide insights on (intentionally ill-defined) segments: 
+
+>The challenge objective: tell a data story about a subset of the data science community represented in this survey, through a combination of both narrative text and data exploration. A "story" could be defined any number of ways, and that's deliberate. The challenge is to deeply explore (through data) the impact, priorities, or concerns of a specific group of data science and machine learning practitioners. That group can be defined in the macro (for example: anyone who does most of their coding in Python) or the micro (for example: female data science students studying machine learning in masters programs). This is an opportunity to be creative and tell the story of a community you identify with or are passionate about!
+
+[Source](https://www.kaggle.com/kaggle/kaggle-survey-2018/home)
+
+Note that this is unlike most Kaggle competitions: there is no single metric to determine a ranking of competition submissions. 
+
+# Preliminaries {.tabset .tabset-fade .tabset-pills}
+
+Before beginning the interactive analysis, a number of preliminary bits are required.
+
+## Assumptions
+
+There are a few things to note up-front:  
+1. **Bias**: The data are inherently biased, as they are from survey respondents. As this bias is persistent, the language of this document will not continunously reflect the bias for brevity and to present the information as a story, rather than a technical treatise. The bias will only be explicitly mentioned in the context if it makes a difference to the analysis.  
+2. **Accuracy**: In addition to the bias of survey respondents, it is unclear whether the survey has been answered honestly. Again, as this assumption underlies all the survey data, the language will not be mathematically precise. For example, rather than "Survey respondents identifying as female..." may be abbreviated as "Female respondents...", but the implication should be remembered, even if it is not always explicit.  
+3. **External Data**: Other public data sets on Kaggle are sourced (i.e. country data and world happiness data). These data sets are assumed to be correct; surprising features of the data will be noted, but they are implicitly assumed to be correct.
+
+## Library Load
+
+Libraries are loaded for convenience. These include:
+
+1. `rmarkdown`: Obviously required for an `rmarkdown` document!  
+2. `tidyverse`: Rather than load each component individually, it's easier for me to load the package of packages.  
+3. `DT`: Use of `datatables.js` in `R`. Not to be confused with `data.table`!   
+4. `threejs` for three-dimensional scatter plots.
+5. `highcharter` for world maps[^2].
+6. `countrycode` for a unique country identifier.
+6. `magrittr` for the double-pipe. 
+7. `RColorBrewer` for well-made colour combinations.
+
+[^2]: Note that commercial use of `highcharts.js`, which sits behind the `highcharter` package, requires a license. Further note that the author of this document has a license for both `highcharts` and `highmaps`.
+
+```{r libLoad, include=TRUE, echo=TRUE, message=FALSE, warning=FALSE}
+# Load libraries
+# rmarkdown to be sure everything herein will work :)
+library( rmarkdown )
+# tidyverse for most of the analysis
+library( tidyverse )
+# DT for better table displays
+library( DT )
+# threejs for 3D scatter plots
+library( threejs )
+# highcharter for 2D scatter plots and maps
+library( highcharter )
+# countrycode for joining country data
+library( countrycode )
+# magrittr for double-pipe
+library( magrittr )
+# RColorBrewer for colour choices
+library( RColorBrewer )
+```
+
+
+## Data Load {.tabset .tabset-fade .tabset-pills}
+
+Data are loaded from three sources:
+
+1. The Kaggle survey.  
+2. Country profile information.  
+3. The World Happiness Survey.  
+
+
+### Kaggle Survey
+
+Only a subset of the data will be used here. These are:  
+
+* Data from the *multiple choice* section. The free-answer responses are not considered.
+
+* Questions that have a *single option*, rather than the "List all..." variety. This is to simplify the analysis, and make the general coding much easier.
+
+* Data are augmented by a user-defined *topic*, to simplify the questions down to a shorter name.
+
+```{r dataKaggle, include=TRUE, echo=TRUE, message=FALSE, warning=FALSE}
+## Check multipleChoiceResponses
+surveyFile <- './input/multipleChoiceResponses.csv'
+if( file.exists( surveyFile ) ){
+  ## Loading the data is a bit of an adventure in itself....
+  baseLoad <- readr::read_csv( surveyFile, skip=1 ) %>%
+              mutate( rowID=row_number() ) 
+  names( baseLoad )[1] <- 'Time'
+
+  # Get all the categorical data together
+  catData <- baseLoad %>%
+    mutate( rowID=row_number() ) %>%
+    gather( -rowID, key=Question, value=Answer ) 
+  # Get the question IDs and question text for merging
+  titleLoad <- readr::read_csv( surveyFile, n_max=1 ) %>%
+    gather( key=questionID, value=Question ) %>%
+    separate( questionID, into=c('QID', 'Qualifier'), extra='merge', fill='right' ) %>%
+    # Remove free-text fields
+    filter( !grepl( x=Qualifier, pattern='Text', ignore.case=TRUE )
+            , !grepl( x=Qualifier, pattern='Part', ignore.case=TRUE)
+            , !grepl( x=Qualifier, pattern='OTHER', ignore.case=TRUE ) )
+
+  cleanData <- catData %>%
+    inner_join( titleLoad, by='Question' ) %>%
+    select( rowID, QID, Answer ) %>%
+    filter( !is.na( Answer ), Answer != '-1' )
+
+  topicData <- dplyr::tibble( QID=paste0( 'Q', c(1:10, 12, 17, 18, 20, 22:26, 32, 37, 40, 43, 46, 48) )
+                       , Topic=c(
+                         'Gender' #Q1
+                         , 'Age' #Q2
+                         , 'Country' #Q3
+                         , 'Education' #Q4
+                         , 'Major' #Q5
+                         , 'Title' #Q6
+                         , 'Industry' #Q7
+                         , 'Experience' #Q8
+                         , 'Salary' #Q9
+                         , 'EmployerML' #Q10
+                         , 'PrimaryTool' #Q12
+                         , 'PrimaryProgramming' #Q17
+                         , 'RecommendProgramming' #Q18
+                         , 'PrimaryML' #Q20
+                         , 'PrimaryDV' #Q22
+                         , 'ActiveCodePc' #Q23
+                         , 'ExperienceCoding' #Q24
+                         , 'ExperienceML' #Q25
+                         , 'RUDS' #Q26
+                         , 'PrimaryDataType' #Q32
+                         , 'PrimaryOnlinePlatform' #Q37
+                         , 'AcadOrIndep' #Q40
+                         , 'BiasPercent' #Q43
+                         , 'InsightsPercent' #Q46
+                         , 'IsMLBlackBox' #Q48 
+                       ) )
+  
+  finalData <- cleanData %>% 
+    left_join( topicData, by='QID' ) %>%
+    select( rowID, Topic, Answer ) %>%
+    spread( key=Topic, value=Answer ) %>%
+    mutate( Country=case_when(
+      grepl( x=Country, pattern='United States' ) ~ 'USA'
+      , grepl( x=Country, pattern='United Kingdom' ) ~ 'UK'
+      , grepl( x=Country, pattern='Iran' ) ~ 'Iran'
+      , grepl( x=Country, pattern='Hong Kong') ~ 'Hong Kong'
+      , grepl( x=Country, pattern='I do not' ) ~ 'Other'
+      , TRUE ~ Country
+    )
+    ) %>%
+    mutate_if( is.character, as.factor )
+  } else if( !exists( 'adaptiveRV', inherits=TRUE ) ){
+  stop('Cannot find survey response file!' )
+}
+```
+
+### Country Profile
+
+As the focus of this document is on the global state of Kaggle survey respondents, auxillary data are loaded. These will be used to:  
+1. Determine a *Kaggle Density*, being the number of survey respondents per million of population.  
+2. Extract the *Internet usage* and levels of *government funding of education* of different countries.
+3. Provide geographic groupings of*region*, and a proxy for *continent*.
+
+```{r dataCountry}
+countryFile <- './input/country_profile_variables.csv'
+rawCountryData <- readr::read_csv( countryFile )
+countryDataTemp <- rawCountryData %>% 
+  mutate( Country=case_when( 
+    country=='United States of America' ~ 'USA'
+    , country=='United Kingdom' ~ 'UK'
+    , country=='Czechia' ~ 'Czech Republic'
+    , country == 'Republic of Korea' ~ 'South Korea'
+    , grepl( x=country, pattern='Russia') ~ 'Russia'
+    , grepl( x=country, pattern='Hong Kong') ~ 'Hong Kong'
+    , grepl( x=country, pattern='Iran' ) ~ 'Iran'
+    , TRUE ~ country ) 
+    , Continent=case_when(
+      grepl( x=Region, pattern='Asia' ) ~ 'Asia'
+      , grepl( x=Region, pattern='Europe' ) ~ 'Europe'
+      , grepl( x=Region, pattern='Africa' ) ~ 'Africa'
+      , TRUE ~ Region # Note this isn't quite continent - Central America is left as a distinct region
+    )
+    ) %>% 
+  select( Country
+          , 2 # Region
+          , Continent
+          , 4 # Population (thousands)
+          , 9 # GDP per capita
+          , 35 # Education: Gov't expenditure (%GDP)
+          , 38 # Education: Tertiary enrolment ratio (f/m per 100 pop) Note there are some cases of over 100 gross enrolment per 100 population. See assumptions regarding data quality.
+          , 42 # Individuals using Internet (per 100): Note this looks suspect. See assumption regarding data quality.
+          )
+names( countryDataTemp ) <- c('Country'
+                           , 'Region'
+                           , 'Continent'
+                           , 'Population'
+                           , 'perCapitaGDP'
+                           , 'govtEducation'
+                           , 'tertiaryEducation'
+                           , 'Internet' )
+countryData <- countryDataTemp %>%
+  # Only keep those countries which have Kaggle survey data
+  semi_join( finalData, by='Country' ) %>%
+  # Tertiary education is given as "(f/m)" - split into its component parts
+  separate( col=tertiaryEducation
+            , into=c('tertiaryF', 'tertiaryM')
+            , sep='/'
+            , convert=TRUE ) %>%
+  # The retained metrics are all numeric - convert them (or have them as NA)
+  mutate_at( 4:9, as.numeric ) %>% 
+  # Population is given in thousands. Convert to millions.
+  mutate( Population_M=Population/1e3
+          # Aggregate tertiary enrolments
+          , tertiaryMF=tertiaryF+tertiaryM ) %>%
+  select( -Population ) 
+
+# Derive Kaggle Density from merged survey data and country data
+countrySummary <- finalData %>% 
+  group_by( Country ) %>% 
+  summarise( N=n() ) %>% 
+  inner_join( countryData, by='Country' ) %>% 
+  mutate( kaggleDensity=N/Population_M  )
+```
+
+### World Happiness Index
+
+```{r dataHappy}
+happyFile <- './input/worldHappiness2017.csv'
+happyData <- readr::read_csv( happyFile ) 
+
+names( happyData ) <- c('Country', 'happyRank', 'happyValue', 'happyHigh', 'happyLow', 'Economy', 'Family', 'Health', 'Freedom', 'Generosity', 'Trust', 'Dystopia' )
+happyData %<>% select( Country, happyValue, Economy, Generosity, Trust )
+```
+
+## Function Definition
+
+To facilitate analysis, some functions are defined. 
+
+```{r functionDef, include=TRUE}
+getNumberPercentage <- function( fullData, groupVar ){
+  summaryData <- fullData %>%
+    group_by_( groupVar, add=TRUE ) %>%
+    summarise( N=n() ) %>%
+    mutate( Percentage=N/sum( N ) ) 
+  
+  return( summaryData )
+}
+```
+
+
+# Global Development Opportunities {.tabset .tabset-fade .tabset-pills}
+
+Suppose there are three primary drivers for development of a data science community:  
+1. **Internet**: Without the widespread availability of the Internet, it's difficult to become a data scientist. Access to cloud computing, online learning, and Kaggle competitions is difficult.  
+2. **Mentors**: To develop data scientists, there should be an existing population. I use the *Kaggle Density* (i.e. survey respondents per million people of population) as a proxy for the availability of mentors.
+2. **Education**: An emphasis on education is required to have the foundation for a data science population. I've considered government expenditure on education and the rate of enrolment in tertiary education as proxies for a culture that values education.  
+
+## Scatter Analysis
+
+For these three, we can construct a 3D scatter plot for each country, based on merging results of the Kaggle survey data and the country data.
+
+```{r scatter3}
+# Make some nice colours
+colourMap <- data.frame( Continent=distinct( countrySummary, Continent ), Colour=RColorBrewer::brewer.pal( n=n_distinct( countrySummary$Continent ), 'Dark2' ) )
+countrySummary1 <- countrySummary %>% 
+  # Join colour information
+  inner_join( colourMap, by='Continent' ) %>%
+  # Negative values are used to indicate missing in some cases (e.g. govtEducation)
+  filter_if( is.numeric, all_vars( . >= 0 ) ) 
+
+featurePlot <- with( countrySummary1,
+                     scatterplot3js( x=kaggleDensity
+                                     , y=Internet
+                                     , z=govtEducation
+                                     , color=Colour
+                                     , labels=Country
+                                     , flip.y=FALSE
+                                     , size=3*sqrt( N )/sqrt( max( N ) )
+                                     , main='Global Data Science Potential' 
+                                     , axisLabels=c('Kaggle Density', 'Education', 'Internet' )
+                                   ) 
+                     ) 
+featurePlot
+```
+
+In these coordinates, the large points of the USA (green) and India (pink) are readily apparent. There is a conspicuous cluster of points around India (rotate the plot for a better view). This includes:  
+1. Colombia  
+2. Brazil
+3. Mexico
+4. Malaysia  
+5. Indonesia
+
+These countries are characterised by high Internet, medium government expenditure on education, and (very?) low Kaggle Density; the large absolute number of respondents from India is offset by the large population.
+
+To be more rigourous, I used $k-$means clustering to find better clusters.
+```{r potentialCluster}
+# Pick the number of clusters...
+nCluster <- 5
+# Run the clustering
+k3d <- kmeans( countrySummary1 %>% select( kaggleDensity, Internet, govtEducation ), centers = nCluster, nstart = 10 )
+k3d$Colours <- brewer.pal( nCluster, 'Accent' )[1:nCluster]
+k3d$Index <- 1:nCluster
+# Augment with cluster information
+countryCluster <- countrySummary1 %>% mutate( Cluster=k3d$cluster )
+
+# Include the clusters in the plot...
+clusterPlot <- with( countryCluster,
+                     scatterplot3js( x=kaggleDensity
+                                     , y=Internet
+                                     , z=govtEducation
+                                     , color=brewer.pal( nCluster, 'Accent' )[Cluster]
+                                     , labels=Country
+                                     , flip.y=FALSE
+                                     , main='Cluster Analysis of Data Science Potential'
+                                     , axisLabels=c('Kaggle Density', 'Education', 'Internet' )
+                                     # Make the points smaller to emphasise the centres
+                                     , pch='.'
+                                     , size=0.5) 
+                     ) %>%
+  points3d( x=k3d$centers[,1]
+            , y=k3d$centers[,2]
+            , z=k3d$centers[,3]
+            , labels=paste( 'Cluster', k3d$Index )
+            , color=k3d$Colours
+            , pch='@' )
+
+clusterPlot
+```
+
+Due to variable scaling, this effectively slices by the `Internet` variable, as the range of `Internet` is much greater than the other variables [^3].
+
+[^3]: Due to the random nature of $k-$means, this might be different on your computer if you've downloaded the `rmarkdown` file and run it, so I'm trying to avoid naming the clusters. I could set a random number seed -- but it behaves differently based on your version of `R`!
+
+## Discretisation
+
+To regulate the scaling, the data are discretised into "High" and "Low" bins, relative to the median.
+
+```{r discretisation}
+countryBin <- countrySummary1 %>%
+  ungroup() %>%
+  mutate( highInternet=Internet > median( Internet )
+          , highEducation=govtEducation > median( govtEducation )
+          , highKD=kaggleDensity > median( kaggleDensity )
+          , discRank=4*highInternet + 2*highEducation + highKD + 1
+          , discFactor=factor( discRank, levels=1:8, labels=1:8, ordered=TRUE ) ) %>%
+  # Trim down the dataset
+  select( Country, N, Region, Continent, Internet, highInternet, govtEducation, highEducation, kaggleDensity, highKD, discRank, discFactor ) %>%
+  arrange( desc( discFactor ) )
+
+discColours <- RColorBrewer::brewer.pal( n=8, 'BrBG' )
+datatable( countryBin %>% select( -discFactor ) ) %>%
+  formatRound( 'kaggleDensity', 2 ) %>%
+  formatStyle( 'discRank', target='row', backgroundColor=styleInterval( 1:7, discColours ) )
+```
+
+For people who prefer geography, the `highcharter` package allows for some nice maps[^4].
+
+[^4]: Thanks for "Heads or Tails" for the succint code in the public kernal [What We Do in the Kernals - A Kaggle Survey Story](https://www.kaggle.com/headsortails/what-we-do-in-the-kernels-a-kaggle-survey-story) for the highmap.
+
+```{r highMap, message=FALSE, warning=FALSE}
+augCountry <- countryBin %>%
+  mutate(iso3 = countrycode::countrycode(Country, origin = "country.name", destination = "iso3c")
+         , kaggleDensityDisplay=round( kaggleDensity, 2 )
+         , discColour=discColours[discFactor] ) 
+
+highchart() %>%
+  hc_add_series_map(worldgeojson, augCountry, value = 'discRank', joinBy = 'iso3' ) %>%
+  hc_title(text = 'Kaggle Survey 2018 - Ranking of Country by Internet, Education and Kaggle Density') %>%
+  hc_colorAxis( stops=color_stops( 8, discColours ), min=1, max=8 ) %>%
+  hc_tooltip(useHTML = TRUE, headerFormat = "", pointFormat = paste("<b>{point.Country}</b>:"
+             , "<b>Rank</b>:{point.discRank}"                                                        
+             , "<b>Internet</b>:{point.Internet}"
+             , "<b>Education</b>:{point.govtEducation}"
+             , "<b>Kaggle Density</b>:{point.kaggleDensityDisplay}"
+             , sep='<br/>' ) )
+```
+
+## Punching Above Their Weight
+
+In the search for a country worthy of investment, let's consider the Kaggle Density as a function of `perCapitaGDP`. For fun, let's embellish our graph to reflect some national pride!
+
+```{r flagPlot, warning=FALSE}
+# Load the Population data from the googleVis package
+# It contains the flag information for us.
+data( Population, package='googleVis' )
+# Load the ggimage package
+library( ggimage )
+
+kdModel <- lm( kaggleDensity ~ perCapitaGDP, data=countrySummary1 )
+countrySummary1$predKD <- predict( kdModel )
+
+# Join on flag info
+flagPlotData <- countrySummary1 %>%
+  inner_join( Population %>% distinct( Country, Flag ), by='Country' ) %>%
+  # The flag has the HTML tags, which doesn't play well with geom_image
+  mutate( Flag1=str_sub( Flag, start=11L, end=-3L ) )
+
+flagPlot <- ggplot( data=flagPlotData, aes( x=perCapitaGDP, y=kaggleDensity ) ) + 
+  geom_image( aes( image=Flag1 ) ) +
+  geom_line( aes( y=predKD ), colour='black', linetype=3 ) +
+  labs( x='GDP (Per Capita)', y='Kaggle Density', title='Comparison of Kaggle Density and Economy', subtitle = 'The dotted line represents a linear regression' )
+
+flagPlot
+```
+
+In case you aren't a flag buff, the data are presented in a `datatable` as well.
+
+```{r flagTable, results='asis'}
+tableData <- flagPlotData %>% 
+  select( Country, Flag, perCapitaGDP, kaggleDensity, predKD ) %>% 
+  mutate( kdResidual=kaggleDensity - predKD ) %>% 
+  arrange( desc( kdResidual ) )
+
+datatable( tableData
+           , escape=2 # Flag information is HTML
+           , colnames=c('Country', 'Flag', 'Per Capita GDP', 'Kaggle Density', 'Predicted KD', 'Residual KD' )
+           , caption='Comparison of predicted Kaggle Density as a function of GDP (per capita). 
+           Countries with positive residual KD have more survey responsens than their GDP would imply.') %>%
+  formatCurrency( 3, digits=0 ) %>%
+  formatRound( 4:6, 2 )
+```
+
+## Gender Representation
+
+As stated above, I'm interested in the global nature of data scientists. By looking at the global split of survey respondants by gender, I've found:
+
+```{r globalGender, eval=TRUE, results='asis', fig.height=9}
+mySummary <- getNumberPercentage( finalData %>% group_by( Country ), 'Gender' )
+myAugData <- finalData %>% inner_join( mySummary %>% filter( Gender == 'Female' ) %>% select( -Gender ), by='Country' ) %>%
+  mutate( Country=reorder( Country, Percentage, FUN=max ) )
+myPlot <- ggplot( myAugData, aes( x=Country, fill=Gender ) ) + 
+  geom_bar(position='fill') +
+  coord_flip() +
+  theme( legend.position='bottom' ) +
+  labs( x='Country', y='Fraction', caption='Note the top four countries for female-represenation are Muslim-majority.', title='Segmentation of Gender, by Country', subtitle='By fraction, not absolute numbers' )
+myPlot
+```
+
+As I've stated in the caption, the countries with the highest representation of female respondants are all Muslim-majority nations. Also, they're all relatively small numbers of female respondents:
+
+```{r globalBreakdown}
+myDT <- datatable( mySummary %>% arrange( Gender, desc( Percentage ) ) ) %>%
+  formatPercentage( 'Percentage', digits=2 )
+myDT
+```
+
+Is there a survey bias, and/or small number effects? On the low-end, I hope that is the case: a female population of under 10\% in Brazil, Belgium, Denmark, Finland, Japan and the Czech Republic is smaller than I'd like to believe.
+
