@@ -1,5 +1,5 @@
 ---
-title: "Choose Your Own Analysis"
+title: "Global Data Science Opportunities"
 author: "Craig 'Doc' Savage"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output: 
@@ -13,7 +13,7 @@ output:
     toc: yes
 ---
 
-```{r initSettings, include=TRUE, message=FALSE, warning=FALSE}
+```{r initSettings, include=TRUE, message=FALSE, warning=FALSE, echo=FALSE}
 knitr::opts_chunk$set( fig.align='center', message=FALSE, warning=FALSE, error=FALSE )
 ```
 
@@ -21,10 +21,21 @@ knitr::opts_chunk$set( fig.align='center', message=FALSE, warning=FALSE, error=F
 
 # Document Overview
 
+To make the document size manageable, some sections are organised into tabs. Subsections may be found under the tabs of their parent section, or from the Table of Contents.
+
 The remainder of the document is organised as follows:
 
+* Introduction: Brief overview of the problem statement, and motivation behind considering a global view of data science.  
+* Preliminaries: Technical information before the analysis begins. Includes assumptions underpinning the analysis, loading the required libraries and data, and definition of auxillary functions.  
+* Global Development Opportunities: A collection of analyses by cutting data at a country-level. 
 
-# Introduction
+
+
+# Introduction {.tabset .tabset-fade .tabset-pills}
+
+Before getting into the technical details, let's start with some background information.
+
+## Problem Statement
 
 Kaggle (www.kaggle.com), a renowned host and sponsor of data analysis competitions, has sponsored their own competition. Their survey attracted 23,859 responses to the 50 question survey. Their challenge, released to the Kaggle community with the incentive of cash rewards, asked analysts to examine the data set and provide insights on (intentionally ill-defined) segments: 
 
@@ -33,6 +44,17 @@ Kaggle (www.kaggle.com), a renowned host and sponsor of data analysis competitio
 [Source](https://www.kaggle.com/kaggle/kaggle-survey-2018/home)
 
 Note that this is unlike most Kaggle competitions: there is no single metric to determine a ranking of competition submissions. 
+
+## Motivation
+
+Last year, I was honoured to be an invited keynote speaker at the APAC Machine Learning and Data Science Community Summit, hosted by Microsoft, in Seoul. There, I met other community leaders from the APAC region.
+
+I was impressed at the passion of the other community leaders, as one after another introduced themselves and gave an overview of their organisation (usually a [Meetup](http://www.meetup.com) page). Leaders representing `R` meetup groups from the [Phillippines](https://www.meetup.com/en-AU/R-Users-Group-Philippines/), [Malaysia](https://www.meetup.com/en-AU/MY-RUserGroup/), and other APAC communities each described challenges they faced and gains they had made in recruiting data science interest. The Malaysian representative also mentioned the [Malaysian government has a big data strategy](https://www.mdec.my/msc-malaysia). He explained that all that was required was an educated population and access to the Internet, without relying on natural resources or other potentially unsustainable practices.
+
+Reflecting on these presentations, I recalled a famous TED talk by Hans Rosling, in which he makes a data-driven case that terms such as "developing world" are outdated, and that the world is advancing rapidly. This leads me to my research question for the Kaggle Survey Data: Which countries, if any, are poised to be future hubs of data science?
+
+I had originally built this analysis to be *interactive*, using `shiny` to look for pockets of interest dynamically. Unfortunately, however, I was unable to have that functionality work on Kaggle. My initial attempts have been [catalogued on my vlog](https://www.youtube.com/playlist?list=PLmJEJN6eXFwi-zH_-Tw52IsOcq-N_LirY) and [posted on GitHub](https://github.com/SavageDoc/kaggleSurveyChallenge). 
+
 
 # Preliminaries {.tabset .tabset-fade .tabset-pills}
 
@@ -306,9 +328,9 @@ featurePlot
 
 In these coordinates, the large points of the USA (green) and India (pink) are readily apparent. There is a conspicuous cluster of points around India (rotate the plot for a better view). This includes:  
 1. Colombia  
-2. Brazil
-3. Mexico
-4. Malaysia  
+2. Brazil  
+3. Mexico  
+4. Malaysia    
 5. Indonesia
 
 These countries are characterised by high Internet, medium government expenditure on education, and (very?) low Kaggle Density; the large absolute number of respondents from India is offset by the large population.
@@ -389,7 +411,7 @@ highchart() %>%
   hc_title(text = 'Kaggle Survey 2018 - Ranking of Country by Internet, Education and Kaggle Density') %>%
   hc_colorAxis( stops=color_stops( 8, discColours ), min=1, max=8 ) %>%
   hc_tooltip(useHTML = TRUE, headerFormat = "", pointFormat = paste("<b>{point.Country}</b>:"
-             , "<b>Rank</b>:{point.discRank}"                                                        
+             , "<b>Rank</b>:{point.discRank}"              
              , "<b>Internet</b>:{point.Internet}"
              , "<b>Education</b>:{point.govtEducation}"
              , "<b>Kaggle Density</b>:{point.kaggleDensityDisplay}"
@@ -466,4 +488,7 @@ myDT
 ```
 
 Is there a survey bias, and/or small number effects? On the low-end, I hope that is the case: a female population of under 10\% in Brazil, Belgium, Denmark, Finland, Japan and the Czech Republic is smaller than I'd like to believe.
+
+# Conclusions
+
 
