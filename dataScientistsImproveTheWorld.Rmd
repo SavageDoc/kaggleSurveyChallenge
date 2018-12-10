@@ -1,0 +1,606 @@
+---
+title: "Data Scientists Make the World a Better Place"
+subtitle: "Bringing Happiness, Wealth, and the Knowledge That Correlation Is Not the Same as Causality"
+author: "Craig 'Doc' Savage"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    highlight: espresso
+    number_sections: yes
+    toc: yes
+  html_notebook: 
+    fig_height: 5
+    number_sections: yes
+    toc: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r initSettings, include=TRUE, message=FALSE, warning=FALSE, echo=FALSE}
+knitr::opts_chunk$set( message=FALSE, warning=FALSE, error=FALSE )
+```
+
+# Executive Summary
+
+In this document, we celebrate the positive impact of data scientists on the world. Herein, we show that there is a correlation between the *density* of Kaggle survey respondents and:
+
+1. Wealth, as measured by per-capita GDP  
+2. Several indicators as measured by the World Happiness Index, as used in the [2017 World Happiness Report](http://worldhappiness.report/ed/2017/), including:  
+    * Happiness  
+    * Freedom
+    * Trust in the government
+    * Generosity
+    * Health, as measured by life expectancy
+    
+The document follows a tongue-in-cheek narrative that, due to this correlation, increasing the number of data scientists, or Kaggle users more generally, make the world a better place. The relationships and graphs are displayed using a number of visualisation techniques, to aid beginners and provide a gallery of sorts for beginners. 
+
+Finally, the goal of this report is to have fun. Although correlation does not necessitate causality, it is important for data scientists to have fun in a casual setting, to so that the argument is a little less speculative. Images and analyses are presented using a mixture of series visualisations and a good dose of fun. 
+
+As a dual citizen, I acknowledge that different levels of seriousness are considered differently throughout the world (Australian humour can be a bit different from American humor), but I hope you enjoy this report in the light-hearted nature in which it's intended.
+
+
+# Document Overview
+
+To make the document size manageable, some sections are organised into tabs. Subsections may be found under the tabs of their parent section, or from the Table of Contents.
+
+The remainder of the document is organised as follows:
+
+* **Introduction**: Brief overview of the problem statement, and motivation behind considering a global view of data science.  
+* **Preliminaries**: Technical information before the analysis begins. Includes assumptions underpinning the analysis, loading the required libraries and data, and definition of auxillary functions.  
+* **Global Development Opportunities**: A collection of analyses by cutting data at a country-level, to find the best locations to develop data science communities to improve the lives of the citizens of the world. 
+
+# Introduction {.tabset .tabset-fade .tabset-pills}
+
+Before getting into the technical details, let's start with some background information.
+
+## Problem Statement
+
+Kaggle (www.kaggle.com), a renowned host and sponsor of data analysis competitions, has sponsored their own competition. Their survey attracted 23,859 responses to the 50 question survey. Their challenge, released to the Kaggle community with the incentive of cash rewards, asked analysts to examine the data set and provide insights on (intentionally ill-defined) segments: 
+
+>The challenge objective: tell a data story about a subset of the data science community represented in this survey, through a combination of both narrative text and data exploration. A "story" could be defined any number of ways, and that's deliberate. The challenge is to deeply explore (through data) the impact, priorities, or concerns of a specific group of data science and machine learning practitioners. That group can be defined in the macro (for example: anyone who does most of their coding in Python) or the micro (for example: female data science students studying machine learning in masters programs). This is an opportunity to be creative and tell the story of a community you identify with or are passionate about!
+
+[Source](https://www.kaggle.com/kaggle/kaggle-survey-2018/home)
+
+Note that this is unlike most Kaggle competitions: there is no single metric to determine a ranking of competition submissions. 
+
+## Motivation
+
+Last year, I was honoured to be an invited keynote speaker at the APAC Machine Learning and Data Science Community Summit, hosted by Microsoft, in Seoul. There, I met other community leaders from the APAC region.
+
+I was impressed at the passion of the other community leaders, as one after another introduced themselves and gave an overview of their organisation (usually a [Meetup](http://www.meetup.com) page). Leaders representing `R` meetup groups from the [Phillippines](https://www.meetup.com/en-AU/R-Users-Group-Philippines/), [Malaysia](https://www.meetup.com/en-AU/MY-RUserGroup/), and other APAC communities each described challenges they faced and gains they had made in recruiting data science interest. The Malaysian representative also mentioned the [Malaysian government has a big data strategy](https://www.mdec.my/msc-malaysia). He explained that all that was required was an educated population and access to the Internet, without relying on natural resources or other potentially unsustainable practices.
+
+Reflecting on these presentations, I recalled a famous TED talk by Hans Rosling, in which he makes a data-driven case that terms such as "developing world" are outdated, and that the world is advancing rapidly. This leads me to my research question for the Kaggle Survey Data: Which countries, if any, are poised to be future hubs of data science?
+
+I had originally built this analysis to be *interactive*, using `shiny` to look for pockets of interest dynamically. Unfortunately, however, I was unable to have that functionality work on Kaggle. My initial attempts have been [catalogued on my vlog](https://www.youtube.com/playlist?list=PLmJEJN6eXFwi-zH_-Tw52IsOcq-N_LirY) and [posted on GitHub](https://github.com/SavageDoc/kaggleSurveyChallenge). 
+
+
+# Preliminaries {.tabset .tabset-fade .tabset-pills}
+
+Before beginning the interactive analysis, a number of preliminary bits are required.
+
+## Assumptions
+
+There are a few things to note up-front:  
+1. **Bias**: The data are inherently biased, as they are from survey respondents. As this bias is persistent, the language of this document will not continunously reflect the bias for brevity and to present the information as a story, rather than a technical treatise. The bias will only be explicitly mentioned in the context if it makes a difference to the analysis.  
+2. **Accuracy**: In addition to the bias of survey respondents, it is unclear whether the survey has been answered honestly. Again, as this assumption underlies all the survey data, the language will not be mathematically precise. For example, rather than "Survey respondents identifying as female..." may be abbreviated as "Female respondents...", but the implication should be remembered, even if it is not always explicit.  
+3. **External Data**: Other public data sets on Kaggle are sourced (i.e. population data and world happiness data). These data sets are assumed to be correct; surprising features of the data will be noted, but they are implicitly assumed to be correct.
+
+## Library Load
+
+Libraries are loaded for convenience. These include:
+
+1. `rmarkdown`: Obviously required for an `rmarkdown` document!  
+2. `tidyverse`: Rather than load each component individually, it's easier for me to load the package of packages.  
+3. `DT`: Use of `datatables.js` in `R`. Not to be confused with `data.table`!   
+4. `threejs` for three-dimensional scatter plots.
+5. `highcharter` for world maps[^2].
+6. `countrycode` for a unique country identifier.
+6. `magrittr` for the double-pipe. 
+7. `broom` to help tidy results from a regression.
+8. `ggimage` for some fun plots using flags.
+9. `RColorBrewer` for nice colours.
+
+Furthermore, the `googleVis` package is used for the `Population` data set, which includes image locations of country's flags.
+
+[^2]: Note that commercial use of `highcharts.js`, which sits behind the `highcharter` package, requires a license. Further note that the author of this document has a license for both `highcharts` and `highmaps`.
+
+```{r libLoad, include=TRUE, echo=TRUE, message=FALSE, warning=FALSE}
+## Load libraries----
+# rmarkdown to be sure everything herein will work :)
+library( rmarkdown )
+# tidyverse for most of the analysis
+library( tidyverse )
+# DT for better table displays
+library( DT )
+# threejs for 3D scatter plots
+library( threejs )
+# highcharter for 2D scatter plots and maps
+library( highcharter )
+# countrycode for joining country data
+library( countrycode )
+# magrittr for double-pipe
+library( magrittr )
+# broom to help with regression tidying
+library( broom )
+# Load the ggimage package for flags
+library( ggimage )
+# RColorBrewer for some nice predefined colours
+library( RColorBrewer )
+# Load Population data from the googleVis package for flags
+data( Population, package='googleVis' )
+## Manipulate the Population data ----
+Population <- Population %>%  
+  # Country names aren't common across all data sets - I've picked one.
+  mutate( Country=case_when(
+    grepl( x=Country, pattern='United States' ) ~ 'USA'
+    , grepl( x=Country, pattern='United Kingdom' ) ~ 'UK'
+    , grepl( x=Country, pattern='Iran' ) ~ 'Iran'
+    , grepl( x=Country, pattern='South Korea' ) ~ 'Republic of Korea'
+    , grepl( x=Country, pattern='Hong Kong') ~ 'Hong Kong'
+    , grepl( x=Country, pattern='Vietnam' ) ~ 'Viet Nam'
+    , TRUE ~ Country )
+    # The flag has the HTML tags, which doesn't play well with geom_image
+    , Flag1=str_sub( Flag, start=11L, end=-3L ) ) %>% 
+  select( Country, Flag, Flag1 )
+```
+
+
+## Data Load {.tabset .tabset-fade .tabset-pills}
+
+Data are loaded from three sources:
+
+1. The Kaggle survey.  
+2. Country population information.  
+3. The World Happiness Survey.  
+
+
+### Kaggle Survey
+
+Only a subset of the data will be used here. Actually, a very small subset...I only care about the number of respondents per country. This greatly simplifies the loading process and cuts down on memory requirements. 
+
+Furthermore, as the column names are the questions as-asked in the survey, it saves a bit of typing, too.
+
+```{r dataKaggle, include=TRUE, echo=TRUE, message=FALSE, warning=FALSE}
+## Check multipleChoiceResponses
+#surveyFile <- '../input/kaggle-survey-2018/multipleChoiceResponses.csv'
+surveyFile <- './input/multipleChoiceResponses.csv'
+if( file.exists( surveyFile ) ){
+  ## Loading the data is a bit of an adventure in itself, greatly simplified by the sparseness of data I'll be using
+  baseLoad <- readr::read_csv( surveyFile, skip=1 ) %>%
+    mutate( rowID=row_number() ) %>%
+    # Keep only the ID (in case I need to backtrack) and the country
+    # Note both names and numbers will work here
+    select( rowID, 5 )
+  
+  # Abbreviate the names
+  names( baseLoad ) <- c('rowID', 'Country')
+  
+  # Summarise the data
+  countrySummary <- baseLoad %>%
+    # There are a few different conventions for some names - standardise them
+    mutate( Country=case_when(
+      grepl( x=Country, pattern='United States' ) ~ 'USA'
+      , grepl( x=Country, pattern='United Kingdom' ) ~ 'UK'
+      , grepl( x=Country, pattern='Iran' ) ~ 'Iran'
+      , grepl( x=Country, pattern='Hong Kong') ~ 'Hong Kong'
+      , grepl( x=Country, pattern='Russia' ) ~ 'Russia'
+      , grepl( x=Country, pattern='South Korea' ) ~ 'Republic of Korea'
+      , grepl( x=Country, pattern='Egypt' ) ~ 'Egypt'
+      , Country == 'Vietnam' ~ 'Viet Nam'
+      , grepl( x=Country, pattern='I do not' ) ~ 'Other'
+      , TRUE ~ Country ) 
+    ) %>%
+    group_by( Country ) %>%
+    summarise( N=n() )
+  
+} else {
+  stop('Cannot find survey response file!' )
+}
+```
+
+### Country Population
+
+To normalise the number of responses, each country's survey response numbers will be normalised by the population of the declared country of residence. Whilst the population data included in the `googleVis` package contains this information, that data set is from 2010. Instead, county population data as maintained by Kaggle will be used.
+
+```{r popData}
+# Link to the file
+popFile <- './input/Population-EstimatesCountry-Series.csv'
+# Read in the data
+rawPopData <- readr::read_csv( popFile )
+
+popData <- rawPopData %>%
+  # Filter down to total population
+  filter( `Indicator Code` == 'SP.POP.TOTL' ) %>%
+  # Use 2017 data
+  rename( Country=`Country Name`, CountryCode=`Country Code`, Population=`2017` ) %>%
+  # Remove unused data
+  select( Country, CountryCode, Population ) %>%
+  # Standardise some country names
+  mutate( Country=case_when(
+    grepl( x=Country, pattern='United States' ) ~ 'USA'
+    , grepl( x=Country, pattern='United Kingdom' ) ~ 'UK'
+    , grepl( x=Country, pattern='Iran' ) ~ 'Iran'
+    , grepl( x=Country, pattern='Hong Kong') ~ 'Hong Kong'
+    , grepl( x=Country, pattern='Russia' ) ~ 'Russia'
+    , Country == 'Korea, Rep.'  ~ 'Republic of Korea'
+    , grepl( x=Country, pattern='Egypt' ) ~ 'Egypt'
+    , Country == 'Vietnam' ~ 'Viet Nam'
+    , grepl( x=Country, pattern='I do not' ) ~ 'Other'
+    , TRUE ~ Country )
+    # Scale Population to millions
+    , Population=Population/1e6
+  ) 
+```
+
+### World Happiness Index
+
+Data from the [2017 World Happiness Report](http://worldhappiness.report/ed/2017/) were found on Kaggle. These will be used to evaluate the impact of data scientists in their country of residence.
+
+```{r dataHappy}
+happyFile <- './input/worldhappiness2017.csv'
+happyData <- readr::read_csv( happyFile ) 
+
+names( happyData ) <- c('Country', 'happyRank', 'Happiness', 'happyHigh', 'happyLow', 'Economy', 'Family', 'Health', 'Freedom', 'Generosity', 'Trust', 'Dystopia' )
+happyData %<>% select( Country, Happiness, Economy, Health, Freedom, Generosity, Trust )
+happyData <- happyData %>%
+  mutate( Country=case_when(
+    grepl( x=Country, pattern='United States' ) ~ 'USA'
+    , grepl( x=Country, pattern='United Kingdom' ) ~ 'UK'
+    , grepl( x=Country, pattern='Iran' ) ~ 'Iran'
+    , grepl( x=Country, pattern='Hong Kong') ~ 'Hong Kong'
+    , grepl( x=Country, pattern='Russia' ) ~ 'Russia'
+    , grepl( x=Country, pattern='Korea' ) ~ 'Republic of Korea'
+    , grepl( x=Country, pattern='Egypt' ) ~ 'Egypt'
+    , Country == 'Vietnam' ~ 'Viet Nam'
+    , TRUE ~ Country )
+  ) 
+```
+
+### Merged Data
+
+Putting it all together, including the flag data from the `googleVis` package sourced at library load:
+```{r mergedData}
+mergedData <- countrySummary %>%
+  # The Population variable has the flag data, but it's from 2010....
+  left_join( Population, by='Country' ) %>%
+  # Get the updated population data from the Kaggle-maintained source
+  left_join( popData, by='Country' ) %>%
+  # Joining on the happiness data makes me happy
+  left_join( happyData, by='Country' ) %>%
+  # Define Kaggle Density as the number of respondents per million of population
+  mutate( kaggleDensity=N/Population )
+```
+
+This data set, `mergedData`, will be the foundation of the analysis.
+
+# Overview 
+
+Let's start by considering the representation of the state of data science, at a country-level. While the number of respondents is available from the survey, let's consider the impact of normalising the responses by each country's population (in millions, to make the numbers easier to handle).
+
+If we consider the number of respondents from each country, the data are highly skewed to the top few countries; others are far behind.
+
+```{r numberMap}
+augCountry <- mergedData %>%
+  mutate( iso3=countrycode::countrycode(Country, origin = "country.name", destination = "iso3c")
+          , kaggleDensityDisplay=round( kaggleDensity, 2 )
+          , nDisplay=signif( N, 2 )
+          , nRank=dense_rank( desc( N ) )
+          , densityRank=dense_rank( desc( kaggleDensity ) ) )
+
+numberMap <- highchart() %>%
+  hc_add_series_map(worldgeojson, augCountry, value = 'N', joinBy = 'iso3' ) %>%
+  hc_title(text = 'Kaggle Survey 2018 - Ranking of Country by Number of Responses') %>%
+  hc_tooltip(useHTML = TRUE, headerFormat = "", pointFormat = paste("<b>{point.Country}</b>:{point.Flag}"
+                                                                    , "<b>Rank</b>:{point.nRank}"
+                                                                    , "<b>Number</b>:{point.nDisplay}"
+                                                                    , "<b>Kaggle Density</b>:{point.kaggleDensityDisplay}"
+                                                                    , sep='<br/>' ) )
+
+numberMap
+```
+
+Note that the `kaggleDensity` is defined as the number of survey respondents per million people of population. This provides a different ordering of the countries. The highest value is `r round( max( mergedData$kaggleDensity, na.rm=TRUE ), 2 )` *per million people*, showing that Kaggle survey respondents are a rare resource to be treasured by all nations.
+
+```{r kdMap}
+kdMap <- highchart() %>%
+  hc_add_series_map(worldgeojson, augCountry, value = 'kaggleDensity', joinBy = 'iso3' ) %>%
+  hc_title(text = 'Kaggle Survey 2018 - Ranking of Country by Kaggle Density') %>%
+  hc_tooltip(useHTML = TRUE, headerFormat = "", pointFormat = paste("<b>{point.Country}</b>:{point.Flag}"
+                                                                    , "<b>Rank</b>:{point.densityRank}"
+                                                                    , "<b>Number</b>:{point.nDisplay}"
+                                                                    , "<b>Kaggle Density</b>:{point.kaggleDensityDisplay}"
+                                                                    , sep='<br/>' ) )
+
+kdMap
+```
+
+The analysis begins with an overview of each country and the most important things in life, namely:
+
+1. Happiness  
+2. Wealth  
+3. Data Science
+
+The data are clustered via $k-$means clustering, to see if unsupervised learning can help distinguish which of these factors is best suited to group countries.
+
+```{r scatterOverview}
+# Pick the number of clusters...
+nCluster <- 5
+# Run the clustering
+clusterData <- mergedData %>% select( Country, Happiness, Economy, kaggleDensity ) %>%
+  filter_if( is.numeric, all_vars( is.finite( . ) ) )
+
+k3d <- kmeans( clusterData %>% select( -Country ), centers = nCluster, nstart = 10 )
+k3d$Colours <- brewer.pal( nCluster, 'Accent' )[1:nCluster]
+k3d$Index <- 1:nCluster
+# Augment with cluster information
+countryCluster <- clusterData %>% mutate( Cluster=k3d$cluster ) 
+
+# Include the clusters in the plot...
+clusterPlot <- with( countryCluster,
+                     scatterplot3js( x=Happiness
+                                     , y=Economy
+                                     , z=kaggleDensity
+                                     , color=brewer.pal( nCluster, 'Accent' )[Cluster]
+                                     , labels=Country
+                                     , flip.y=FALSE
+                                     , main='Cluster Analysis of Countries by Important Criteria'
+                                     , axisLabels=c('Happiness', 'Kaggle Density', 'GDP' )
+                                     # Make the points smaller to emphasise the centres
+                                     , pch='.'
+                                     , size=0.5) 
+) %>%
+  points3d( x=k3d$centers[,1]
+            , y=k3d$centers[,2]
+            , z=k3d$centers[,3]
+            , labels=paste( 'Cluster', k3d$Index )
+            , color=k3d$Colours
+            , pch='@' )
+
+clusterPlot
+```
+
+As can be seen from the plot, the Kaggle Density is a primary driver for classification. The outlier with the highest Kaggle Density, Singapore, is in a league of its own, justifying its own cluster. Hence, we conclude that Kaggle Density is the most important factor in grouping countries, as our machine learning algorithm has picked it, and, as this is a Kaggle submission, is likely to get a positive outcome. There's no need to consider the scaling of the data, as sophisticated math has given us the answer we wanted, anyway.
+
+# Correlation Analysis {.tabset .tabset-fade .tabset-pills}
+
+Having established Kaggle Density as the most important variable by cluster analysis, we now turn to comparing other important factors as functions of this Kaggle Density.
+
+## Summary
+
+The data are first wrangled to have the independent Kaggle Density to be more easily compared to the other metrics.
+
+```{r gatherData}
+# Gather the data
+gatherData <- mergedData %>%
+  # Only retain Kaggle Density and "dependent" variables
+  select( kaggleDensity, Happiness:Trust ) %>%
+  # Leave kaggleDensity as the "independent" variable
+  gather( key=Metric, value=Value, -kaggleDensity )
+```
+
+First, check if there is correlation between Kaggle Density and the other relevant variables for happiness (including happiness itself).
+
+```{r corAnalysis}
+corData <- gatherData %>%
+  group_by( Metric ) %>%
+  summarise( Correlation=cor( kaggleDensity, Value, use='pairwise.complete.obs' ) ) %>%
+  arrange( desc( Correlation ) )
+
+knitr::kable( corData, caption='Correlation of Kaggle Density with Happiness variables', digits=2)
+```
+
+As the data are correlated, we can estimate the potential impact of increasing the number of data scientists in the world.
+
+```{r singleLinearRegressions}
+# Perform linear regressions
+lmData <- gatherData %>%
+  group_by( Metric ) %>%
+  # Do a linear regression for each metric
+  do( linReg=lm( Value ~ kaggleDensity, data=. ) ) %>%
+  # The linReg column is now a structure - the broom package will help parse through it
+  broom::tidy( linReg, quick=TRUE ) %>%
+  # Spread the regression terms back out
+  spread( key=term, value=estimate ) %>%
+  # Clean up the term names
+  rename( Intercept=`(Intercept)`, Slope=kaggleDensity )
+
+# Display
+knitr::kable( lmData, caption='Modelling a variety of happiness metrics as a function of Kaggle Density', digits=4 )
+```
+
+As every regression has a positive slope, one could interpret this as a causal relationship - that by increasing the number of Kaggle survey respondents, we can make people happier, wealthier, more trusting in their governments by reducing corruption, more generous, enjoy greater freedom, and live longer.
+
+Of course, just because one *could* interpret it that way doesn't mean one *should* interpret it that way. I like to be optimistic more than technically precise sometimes.
+
+Plots will be constructed via `ggplot`, with increasing ~~fun~~ complexity. 
+
+```{r makePlotFunctions}
+makePointPlot <- function( dataIn, yValue ){
+  pointPlot <- ggplot( data=mergedData
+                       , aes_string( x='kaggleDensity', y=yValue, size='N' ) ) + 
+    geom_point( aes( colour=Happiness ) ) +
+    geom_smooth( method='lm', linetype=3, colour='black' ) +
+    theme( legend.position = 'bottom' ) +
+    labs( x='Kaggle Density', y=yValue, title=paste('Relationship between Kaggle Density and', yValue ) )
+  # Labels, titles, etc can be added layers later
+  return( pointPlot )
+}
+makeTextPlot <- function( dataIn, yValue ){
+  textPlot <- ggplot( data=mergedData
+                      , aes_string( x='kaggleDensity', y=yValue, size='N' ) ) + 
+    geom_label( aes( label=CountryCode, fill=Happiness )
+                , color='white'
+                , fontface='bold' 
+                , alpha=0.6 ) +
+    geom_smooth( method='lm', linetype=3, colour='black' ) +
+    theme( legend.position = 'bottom' ) +
+    labs( x='Kaggle Density', y=yValue, title=paste('Relationship between Kaggle Density and', yValue ) )
+  # Labels, titles, etc can be added layers later
+  return( textPlot )
+}
+
+makeFlagPlot <- function( dataIn, yValue ){
+  flagPlot <- ggplot( data=mergedData, aes_string( x='kaggleDensity', y=yValue ) ) + 
+    geom_image( aes( image=Flag1 ) ) + 
+    geom_smooth( method='lm', linetype=3, colour='black' ) +
+    theme( legend.position = 'none' ) +
+    labs( x='Kaggle Density', y=yValue, title=paste('Relationship between Kaggle Density and', yValue ) )
+  # Labels, titles, etc can be added layers later
+  return( flagPlot )
+}
+```
+
+Some of the individual indicators are considered to demonstrate graphical options.
+
+## Economy
+
+![Picture: Button with a likeness of Bill Clinton saying "It's the Economy, Stupid"](http://americanhistory.si.edu/presidency/images/large/2000-6353_L.jpg)
+
+We begin the analysis with a brief analysis of the relationship between Kaggle Density and Economy, as it has the highest correlation. This correlation makes sense: as the sexiest job of the 21^st^ century, data scientists command high salaries. The more people on high salaries, the more high income earners and, ergo, the higher GDP. Although it could be argued that this is reversed - that only countries with high GDP can afford data scientists - this argument ignores the modern reality that the economy is global. Data scientists can be productive given an Internet connection and access to knowledge. As Kaggle provides the access to knowledge over the Internet, this simplifies as the only thing required for a data science industry is access to the Internet, and people willing to work in this area.
+
+The relationship is shown with a standard `ggplot`:
+```{r econPlot}
+econPlot <- makePointPlot( mergedData, 'Economy' )
+econPlot
+```
+
+The strengths of `ggplot` are readily apparent, as four dimensions are shown simultaneously. The graph looks fine (in my opinion, and I have the sexiest job of the 21^st^ century so clearly my fashion opinion matters). There are, however, a few limitations:  
+* Other than distinctive points (e.g. USA, Singapore), it is difficult to identify any individual country.  
+* There is no built-in tooltip information to aid the viewer identify points.  
+
+Further graphs will address these concerns.
+
+## Happiness
+
+Second to the Economy, we consider Happiness. Although to correlation is less strong than Trust, I trust you are happy for me to consider it second. As in the point plot for the economy, the same basic infrastructure applies, only with `geom_label` with the country codes. Searching for a specific country or naming "interesting" points is then possible.
+
+```{r happinessPlot, fig.align='center'}
+happinessPlot <- makeTextPlot( mergedData, 'Happiness' ) 
+happinessPlot
+```
+
+
+
+## Trust
+
+One component of the World Happiness Index is a Perception of Government Corruption, with low values indicating a perceived more corrupt government. Hence, this value has been relabeled "Trust", so that high values reflect positive feelings. 
+
+This relationship is intuitive - data scientists like to deal with data rather than ideology, so I believe firmly that data scientists can be a driving force in uncovering corruption. As the data do not contradict this claim, I assert it to be so.
+
+The final `ggplot` uses `ggimage` along with the flag data from the `googleVis` package to make a more impressive plot. It does require knowledge of flags, but they can be provided in a table.
+
+```{r flagPlot}
+trustPlot <- makeFlagPlot( mergedData, 'Trust' )
+trustPlot
+```
+
+Unfortunately, I've been having trouble getting the `datatable` to show on the Kaggle server, but the code is below:
+```{r flagTable, eval=TRUE}
+tableData <- mergedData %>% 
+  # Only keep the necessary variables
+  select( Country, Flag, kaggleDensity, Trust )
+
+trustTable <- datatable( tableData
+                         , escape=3 # The second column is HTML for the flag
+                         , colnames = c('Country', 'Flag', 'Kaggle Density', 'Trust' )
+                         , rownames = FALSE
+                         , caption='Underlying data for the Kaggle Density/Trust plot') %>%
+  formatRound( c('kaggleDensity', 'Trust'), digits = 4 )
+
+trustTable
+```
+
+## Freedom
+
+Although `ggplot` forms the basis of a multitude of data visualisation in `R`, here, in the **Freedom** section, we seek greater freedom for our charts. A common complaint amongst stakeholders is that the plots made by `ggplot` are functional, they are not always the most aesthically pleasing, and lack tooltip infromation. Here, I'll use the `highcharter` package to interface with `highcharts.js`, which enables more ~~fun~~ customisation options, as well as interactive tooltips[^3]. 
+
+[^3]: The maps were also made with the `highcharter` package, so the tooltip information should look familiar.
+
+On a personal note, any discussion of freedom conjures patriotic thoughts for me, as I think of my native USA.
+
+```{r freedomPlot}
+freedomPlot <- highchart() %>%
+  hc_add_series( data=mergedData %>% 
+                   filter_if( is.numeric, all_vars( is.finite(.) ) ) %>% 
+                   mutate( kaggleDensityDisplay=round( kaggleDensity, 2 )
+                           , freedomDisplay=round( Freedom, 2 )
+                           , happyDisplay=round( Happiness, 2 )
+                           , hcColour=colorize( Happiness )
+                           , hcSize=5*sqrt( N/max( N ) ) )
+                 , hcaes( x='kaggleDensity'
+                          , y='Freedom'
+                          , color='hcColour'
+                          , size='hcSize' )
+                 , type='scatter' ) %>%
+  # Disable gridlines on y-axis: Looks like bars. There's no space for bars on a freedom graph!
+  hc_yAxis( gridLineWidth=0 ) %>%
+  hc_title(text = 'Kaggle Survey 2018 - Impact of Data Science on Freedom') %>%
+  hc_tooltip(useHTML = TRUE, valueDecimals=2, headerFormat = ""
+             , pointFormat = paste("<b>{point.Country}</b> {point.Flag}"
+                                   , "<b>Number:</b> {point.N}"
+                                   , "<b>Happiness:</b>{point.happyDisplay}"
+                                   , "<b>Freedom</b>:{point.freedomDisplay}"
+                                   , "<b>Kaggle Density</b>:{point.kaggleDensityDisplay}"
+                                   , sep='<br/>' ) ) %>%
+  hc_legend( enabled=FALSE )
+
+usaTheme <- hc_theme(
+  chart = list(
+    backgroundColor = NULL,
+    plotBackgroundImage = "https://media.giphy.com/media/PnwtRuYGDinBe/giphy.gif"
+  ),
+  title = list(
+    style = list(
+      color = '#FFFFFF'
+    )
+  )
+)
+
+freedomPlot %>% hc_add_theme( usaTheme )
+```
+
+...while that makes the point, it is hard to read. And, after all, the US is twentieth on the list, so perhaps free as a bird is a better analogy.
+
+```{r birdTheme}
+calvinTheme <- hc_theme(
+  chart = list(
+    backgroundColor = NULL,
+    plotBackgroundImage = "https://media.giphy.com/media/gZEBpuOkPuydi/giphy.gif"
+  ),
+  title = list(
+    style = list(
+      color = '#000000'
+    )
+  )
+)
+
+freedomPlot %>% hc_add_theme( calvinTheme )
+```
+
+Ok, fine...that's hard to read, too. I'll show the base scatter plot in `highcharter`, then. I'm reminded why data scientists don't yield so much freedom, with stakeholders expecting nice interactions on graphs but then getting grumpy when we try to have fun with animated images.
+
+```{r freeFlags}
+freedomPlot 
+```
+
+# Conclusions
+
+The relationships between the *Kaggle Density* and a number of happiness indicators have been calculated, linear models built, and data visualisations presented. While the results hold from a purely technical standpoint, interpreting the correlations as a means to make a better world through creating more data scientists is tenuous. 
+
+Certainly, more rigorous analysis could be done. Although this problem is whimsical, it does contain many complicating factors that could apply in future problems. For instance:
+
+* Multiple regression with regularisation (e.g. LASSO) to determine which variables "best" predict happiness. As all the independent variables are correlated to Kaggle Density, they can't all be employed together. What technique(s) should you use? 
+* In addition to the survey bias, what other bias(es) exist in the data? What methods could be used to reduce/mitigate the bias?  
+* Within the country data, Singpore appears to be an outlier in terms of its Kaggle Density. How should this be handled? (Noting it as an outlier but taking no remedial action is an option.)  
+* Most importantly, what animated GIF are you excited to use as a background for a plot?  
+
+However, that doesn't mean we shouldn't try. Part of being a data scientist should mean making fun graphs with animated GIFs whilst learning, following hunches, doing exploratory analysis for whimsical problems, and developing skills by play. Doing so will create more happiness for the individual learner, thereby making the conclusions from this report change from mathematically questionable to absolutely true. 
+
+# Acknowledgments
+
+Special thanks to:
+
+* [Kaggle](https://www.kaggle.com) for sponsoring this competition, and making the survey data public.  
+* "Heads or Tails", for making their Kaggle Kernal [What We Do in the Kernals - A Kaggle Survey Story](https://www.kaggle.com/headsortails/what-we-do-in-the-kernels-a-kaggle-survey-story) public.  
+* [Highsoft](https://www.highsoft.com) for reasonable [licensing structures](https://shop.highsoft.com/highcharts).  
+* "jkunst" for maintaining the `highcharter` package for `R` and its accompanying [website](http://jkunst.com/highcharter/index.html).
